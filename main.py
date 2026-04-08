@@ -284,7 +284,7 @@ def layout():
         Div(
             Div(
                 Span(
-                    'All images',
+                    'All artifacts',
                     style='font-size: clamp(12px, 3.5vw, 14px); color: var(--color-text-secondary);',
                 ),
                 Span(
