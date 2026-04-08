@@ -32,13 +32,11 @@
 - Return FT components from route handlers, not raw HTML strings
 - CSS via inline Style() component or picolink, not Tailwind (unless explicitly requested)
 
-## Websocket client (outbound)
-- Use the `websockets` Python library for outbound connections to external services
-- Do NOT use FastHTML's built-in ws extension (exts='ws', ws_send, @app.ws) for outbound client connections
-- FastHTML's ws extension is only for browser-to-server websocket endpoints
-- Store persistent websocket connections as module-level variables
-- Implement reconnection with exponential backoff on connection loss
-- Use asyncio.create_task for background loops (ping, message listener)
+## Websocket
+- All websocket code is client-side JavaScript, served via Script() component
+- Do NOT use FastHTML's built-in ws extension (exts='ws', ws_send, @app.ws)
+- Do NOT add the `websockets` Python library
+- Do NOT create server-side websocket routes or relay logic
 
 ## HTTP client
 - Use httpx.AsyncClient for API calls
@@ -63,4 +61,5 @@
 - Do not use SQLAlchemy, Pydantic, or FastAPI — this is FastHTML
 - Do not add Docker, CI/CD, or deployment config unless asked
 - Do not refactor into multiple modules unless asked
+- Do NOT add the `websockets` Python library as a dependency
 - Do not add dependencies beyond what pyproject.toml specifies

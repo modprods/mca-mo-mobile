@@ -9,7 +9,6 @@ dependencies = [
     "monsterui>=1.0.45",
     "python-dotenv>=1.2.2",
     "python-fasthtml>=0.13.3",
-    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]

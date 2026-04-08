@@ -1,13 +1,11 @@
 
 from fasthtml.common import *
-import asyncio
 import logging
 import os
 from typing import Any
 
 import httpx
 from dotenv import load_dotenv
-import websockets
 
 load_dotenv()
 
@@ -32,11 +30,9 @@ WS_PING_INTERVAL = 15
 GRID_COLS = 4
 GRID_ROWS = 12
 GRID_SIZE = GRID_COLS * GRID_ROWS
-WS_RECONNECT_BASE = 5
-WS_RECONNECT_MAX = 60
 
 WAGTAIL_API_BASE = os.environ.get("WAGTAIL_API_BASE", "").strip()
-WS_HOST = os.environ.get("WS_HOST", "").strip()
+TD_WS_URL = os.environ.get("WS_HOST", "").strip()
 
 mobile_shell_css = Style(NotStr("""
 html { -webkit-text-size-adjust: 100%; }
@@ -123,16 +119,6 @@ async def fetch_all_images(
 
 
 images: list[dict] = []
-ws_connection: Any | None = None
-ws_manager_task: asyncio.Task | None = None
-ws_should_stop = False
-
-
-def _ws_is_connected() -> bool:
-    if ws_connection is None:
-        return False
-    closed = getattr(ws_connection, "closed", False)
-    return not bool(closed)
 
 
 async def _load_images_at_startup() -> None:
@@ -140,91 +126,96 @@ async def _load_images_at_startup() -> None:
     images = await fetch_all_images()
 
 
-async def _ws_ping_loop(conn: Any) -> None:
-    while True:
-        await asyncio.sleep(WS_PING_INTERVAL)
-        pong_waiter = await conn.ping()
-        await pong_waiter
-        logger.debug("WS pong received")
+def _td_ws_script() -> Any:
+    ws_url = TD_WS_URL.replace("\\", "\\\\").replace('"', '\\"')
+    return Script(
+        NotStr(
+            f"""
+const TD_WS_URL = "{ws_url}";
+let ws = null;
 
+function setWsBadge(connected) {{
+  const el = document.getElementById("ws-status");
+  if (!el) return;
+  el.textContent = connected ? "Connected" : "Reconnect";
+  el.style.background = connected ? "#1d9e75" : "#d85a30";
+}}
 
-async def _ws_receive_loop(conn: Any) -> None:
-    async for message in conn:
-        logger.debug("Server: %s", message)
+function isWsConnected() {{
+  return Boolean(ws && ws.readyState === WebSocket.OPEN);
+}}
 
+function pollWsStatus() {{
+  setWsBadge(isWsConnected());
+}}
 
-async def _run_ws_connection_once() -> None:
-    global ws_connection
-    async with websockets.connect(WS_HOST) as conn:
-        ws_connection = conn
-        logger.info("Connected to TouchDesigner websocket at %s", WS_HOST)
+function connectWS() {{
+  if (!TD_WS_URL) {{
+    console.warn("TD websocket URL is empty");
+    pollWsStatus();
+    return;
+  }}
+  ws = new WebSocket(TD_WS_URL);
+  ws.onopen = () => {{
+    console.debug("TD connected");
+    pollWsStatus();
+  }};
+  ws.onclose = () => {{
+    console.debug("TD disconnected, reconnecting...");
+    pollWsStatus();
+    setTimeout(connectWS, 3000);
+  }};
+  ws.onerror = (e) => {{
+    console.error("TD websocket error:", e);
+    pollWsStatus();
+  }};
+  ws.onmessage = (e) => console.debug("Server:", e.data);
+}}
 
-        ping_task = asyncio.create_task(_ws_ping_loop(conn))
-        recv_task = asyncio.create_task(_ws_receive_loop(conn))
-        done, pending = await asyncio.wait(
-            {ping_task, recv_task},
-            return_when=asyncio.FIRST_EXCEPTION,
+function extractImageId(buttonId) {{
+  if (typeof buttonId !== "string" || !buttonId.startsWith("button_")) {{
+    return null;
+  }}
+  const id = buttonId.slice("button_".length);
+  return /^\\d+$/.test(id) ? id : null;
+}}
+
+function sendId(buttonId) {{
+  const id = extractImageId(buttonId);
+  if (!id) {{
+    console.warn("Invalid button id:", buttonId);
+    return;
+  }}
+  if (isWsConnected()) {{
+    ws.send(id);
+    console.debug("Sent:", id);
+  }} else {{
+    console.warn("WS not connected");
+    pollWsStatus();
+  }}
+}}
+
+function manualReconnect() {{
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {{
+    ws.close();
+  }} else {{
+    connectWS();
+  }}
+}}
+
+window.sendId = sendId;
+window.manualReconnect = manualReconnect;
+connectWS();
+pollWsStatus();
+setInterval(pollWsStatus, 3000);
+"""
         )
-        for task in pending:
-            task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-
-        for task in done:
-            exc = task.exception()
-            if exc:
-                raise exc
-
-
-async def _ws_manager_loop() -> None:
-    global ws_connection
-    backoff = WS_RECONNECT_BASE
-
-    while not ws_should_stop:
-        try:
-            await _run_ws_connection_once()
-            backoff = WS_RECONNECT_BASE
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            ws_connection = None
-            if ws_should_stop:
-                break
-            logger.warning(
-                "Websocket disconnected (%s). Reconnecting in %ss",
-                exc.__class__.__name__,
-                backoff,
-            )
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, WS_RECONNECT_MAX)
-
-
-async def _start_ws_client() -> None:
-    global ws_manager_task, ws_should_stop
-    ws_should_stop = False
-    if not WS_HOST:
-        logger.warning("WS_HOST is empty; websocket client not started")
-        return
-    ws_manager_task = asyncio.create_task(_ws_manager_loop())
-
-
-async def _stop_ws_client() -> None:
-    global ws_manager_task, ws_connection, ws_should_stop
-    ws_should_stop = True
-
-    if ws_manager_task:
-        ws_manager_task.cancel()
-        await asyncio.gather(ws_manager_task, return_exceptions=True)
-        ws_manager_task = None
-
-    if ws_connection:
-        await ws_connection.close()
-        ws_connection = None
+    )
 
 
 app = FastHTML(
     hdrs=(mobile_shell_css, tlink, dlink, picolink),
-    on_startup=(_load_images_at_startup, _start_ws_client),
-    on_shutdown=_stop_ws_client,
+    on_startup=_load_images_at_startup,
 )
 
 
@@ -247,8 +238,7 @@ def _image_grid_cells() -> tuple[Any, ...]:
                 type="button",
                 title=str(img["title"]),
                 style=f'{btn_style} background-image: url("{thumb}");',
-                hx_post=f"/press/{iid}",
-                hx_swap="none",
+                onclick="sendId(this.id)",
             )
         )
     while len(cells) < GRID_SIZE:
@@ -257,22 +247,15 @@ def _image_grid_cells() -> tuple[Any, ...]:
 
 
 def ws_status_badge() -> Any:
-    connected = _ws_is_connected()
-    label = "WS connected" if connected else "WS disconnected"
-    color = "#1d9e75" if connected else "#d85a30"
     return Span(
-        label,
+        "Reconnect",
         id="ws-status",
         title="Tap to reconnect websocket",
-        hx_get="/status",
-        hx_post="/reconnect",
-        hx_trigger="load, every 3s",
-        hx_target="#ws-status",
-        hx_swap="outerHTML",
+        onclick="manualReconnect()",
         style=(
             "display: inline-flex; align-items: center; justify-content: center; "
             "padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 11px; "
-            f"font-weight: 600; letter-spacing: 0.02em; color: white; background: {color}; "
+            "font-weight: 600; letter-spacing: 0.02em; color: white; background: #d85a30; "
             "cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;"
         ),
     )
@@ -340,6 +323,7 @@ def get():
             ),
         ),
         layout(),
+        _td_ws_script(),
         style=(
             'margin: 0; min-height: 100dvh; min-height: -webkit-fill-available; '
             'background: var(--pico-background-color, Canvas); color: var(--pico-color, CanvasText);'
@@ -347,38 +331,6 @@ def get():
     )
     return Title('More Optimism'), page
 
-
-@app.route("/status")
-def status():
-    return ws_status_badge()
-
-
-@app.route("/reconnect")
-async def reconnect():
-    if not WS_HOST:
-        logger.warning("Reconnect requested but WS_HOST is empty")
-        return ws_status_badge()
-    logger.info("Manual websocket reconnect requested")
-    await _stop_ws_client()
-    await _start_ws_client()
-    return ws_status_badge()
-
-
-@app.route("/press/{image_id}")
-async def post(image_id: int):
-    """Send pressed image id to TouchDesigner over outbound websocket."""
-    global ws_connection
-    if ws_connection is None:
-        logger.warning("Cannot send image %s: websocket not connected", image_id)
-        return ""
-    try:
-        await ws_connection.send(str(image_id))
-        logger.debug("Sent to TouchDesigner: %s", image_id)
-    except Exception:
-        ws_connection = None
-        logger.exception("Failed sending image %s over websocket", image_id)
-        return ""
-    return ""
 
 
 def main() -> None:
