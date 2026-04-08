@@ -23,16 +23,6 @@ moreoptimism/
     └── test_images.py   # pytest tests (create)
 ```
 
-## .cursorrules
-
-Maintain `.cursorrules` at project root with these constraints:
-- Use `from fasthtml.common import *` as the single FastHTML import
-- Use `httpx` for HTTP requests, never `requests`
-- Use `websockets` library for outbound websocket client, not FastHTML ws extension
-- Use `logging` module, not print statements
-- All config values (API base URL, websocket host, grid dimensions) as module-level constants
-- Python 3.12+, no type: ignore comments
-
 ## pyproject.toml
 
 ```toml
@@ -59,14 +49,20 @@ dev = [
 
 ## main.py
 
+### Environment variables
+
+Update .env if these do not exist.
+
+WS_HOST = "ws://<IP>:<PORT>"  # TouchDesigner websocket (LAN, no TLS)
+WAGTAIL_API_BASE = "https://<HOST>/api/v2/images/"
+
 ### Constants
 
 ```python
-WAGTAIL_API_BASE = "https://mod.studio/api/v2/images/"
+
 WAGTAIL_PARAMS = {"format": "json", "tags": "moreoptimism"}
 WAGTAIL_PAGE_SIZE = 20  # API returns 20 items per page
 
-WS_HOST = "ws://10.20.15.92:9980"  # TouchDesigner websocket (LAN, no TLS)
 WS_PING_INTERVAL = 15  # seconds
 
 GRID_COLS = 4
