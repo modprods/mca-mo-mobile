@@ -1,0 +1,10 @@
+[project]
+name = "mca-mo-mobile"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "monsterui>=1.0.45",
+    "python-fasthtml>=0.13.3",
+]
