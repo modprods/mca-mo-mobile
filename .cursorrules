@@ -1,0 +1,65 @@
+# Project: moreoptimism
+# FastHTML image grid controller for TouchDesigner installation
+
+## Stack
+- Python 3.12+, managed by uv (not pip, not poetry)
+- FastHTML via `from fasthtml.common import *`
+- httpx for all HTTP requests (never requests, never urllib)
+- websockets library for outbound websocket client connections
+- pytest + pytest-asyncio for tests
+- logging module for all output (never print)
+
+## Code style
+- Single main.py entry point using FastHTML conventions (app, rt = fast_app(); serve() at bottom)
+- Module-level constants for all config: API URLs, websocket hosts, grid dimensions, intervals
+- Type hints on all function signatures
+- Pure functions where possible (e.g. URL transforms, data parsing)
+- async def for all route handlers and websocket operations
+- f-strings for string formatting (never .format() or %)
+- No classes unless genuinely needed — prefer functions and module-level state
+- No type: ignore comments
+- No star imports except FastHTML's common module
+
+## Environment variables
+- Reference secrets (including network and API details) from .env file
+- Maintain env.sample file with all environment variables listed - with empty values
+
+## FastHTML specifics
+- Use `from fasthtml.common import *` as the single FastHTML import
+- Routes use the `@rt("/path")` decorator pattern
+- Use HTMX attributes (hx-post, hx-swap, hx-trigger) for interactivity
+- Return FT components from route handlers, not raw HTML strings
+- CSS via inline Style() component or picolink, not Tailwind (unless explicitly requested)
+
+## Websocket client (outbound)
+- Use the `websockets` Python library for outbound connections to external services
+- Do NOT use FastHTML's built-in ws extension (exts='ws', ws_send, @app.ws) for outbound client connections
+- FastHTML's ws extension is only for browser-to-server websocket endpoints
+- Store persistent websocket connections as module-level variables
+- Implement reconnection with exponential backoff on connection loss
+- Use asyncio.create_task for background loops (ping, message listener)
+
+## HTTP client
+- Use httpx.AsyncClient for API calls
+- Paginate by incrementing offset until all items fetched
+- Parse JSON responses, extract only needed fields into simple dicts
+- Handle HTTP errors with try/except and logging, not assertions
+
+## Testing
+- pytest with fixtures, never unittest
+- Mock external APIs (Wagtail, websockets) — tests must not hit live services
+- Test pure functions (URL transforms, data parsing) with direct assertions
+- Test file goes in tests/test_*.py
+
+## Project structure
+- Flat layout: main.py at project root, pyproject.toml, .python-version, README.md
+- No src/ directory, no nested package unless the project grows beyond ~300 lines
+- Tests in tests/ subdirectory
+
+## What NOT to do
+- Do not add authentication or CORS middleware unless explicitly requested
+- Do not create separate files for routes, models, or config at this stage
+- Do not use SQLAlchemy, Pydantic, or FastAPI — this is FastHTML
+- Do not add Docker, CI/CD, or deployment config unless asked
+- Do not refactor into multiple modules unless asked
+- Do not add dependencies beyond what pyproject.toml specifies

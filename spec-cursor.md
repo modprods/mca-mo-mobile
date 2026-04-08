@@ -46,6 +46,8 @@ dependencies = [
     "python-fasthtml>=0.12.50",
     "httpx>=0.27",
     "websockets>=13.0",
+    "monsterui>=1.0.45",
+    "python-dotenv>=1.2.2"
 ]
 
 [project.optional-dependencies]
