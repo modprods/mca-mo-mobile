@@ -133,6 +133,8 @@ def _td_ws_script() -> Any:
             f"""
 const TD_WS_URL = "{ws_url}";
 let ws = null;
+let lastSend = 0;
+const DEBOUNCE_MS = 100;
 
 function setWsBadge(connected) {{
   const el = document.getElementById("ws-status");
@@ -181,6 +183,12 @@ function extractImageId(buttonId) {{
 }}
 
 function sendId(buttonId) {{
+  const now = Date.now();
+  if (now - lastSend < DEBOUNCE_MS) {{
+    return;
+  }}
+  lastSend = now;
+
   const id = extractImageId(buttonId);
   if (!id) {{
     console.warn("Invalid button id:", buttonId);

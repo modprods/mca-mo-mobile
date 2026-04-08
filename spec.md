@@ -106,53 +106,84 @@ The `GET /` route returns a 4-column × 12-row grid of image buttons.
 - Use CSS Grid: `display: grid; grid-template-columns: repeat(4, 1fr);`
 - Each cell is a `<button>` with:
   - `id="button_{image_id}"` (e.g., `button_591`)
-  - Background image set to the `thumbnail_url`
-  - `onclick` triggers an HTMX POST or JS call to send the image ID (see Button handler below)
+  - Background image set to the `thumbnail_url` via inline style
+  - `onclick="sendId(this.id)"` to trigger the client-side websocket send
 - If fewer than 48 images, leave remaining cells empty
 - If more than 48 images, only display the first 48
 
-### Feature 3: Websocket client (outbound to TouchDesigner)
+### Feature 3: Client-side websocket (browser to TouchDesigner)
 
-This is a **client** connection using the `websockets` Python library. NOT FastHTML's built-in ws support.
+All websocket logic runs in the browser via a `<script>` block served by FastHTML. No server-side websocket code.
 
-#### Lifecycle
-- On app startup (use Starlette lifespan or `@app.on_event("startup")`), open a persistent websocket connection to `WS_HOST`
-- Store the connection in a module-level variable
-- On shutdown, close the connection gracefully
+Include this JavaScript in the page via a `Script()` component:
 
-#### Ping/pong
-- Send a websocket ping every `WS_PING_INTERVAL` seconds (use `websockets` built-in ping, or `asyncio.create_task` with a loop)
-- Log pong receipt at DEBUG level: `"WS pong received"`
+```javascript
+const TD_WS_URL = "{TD_WS_URL}";
+let ws;
 
-#### Incoming messages
-- Log all incoming server messages at DEBUG level: `f"Server: {message}"`
+function connectWS() {
+    ws = new WebSocket(TD_WS_URL);
+    ws.onopen = () => console.debug("TD connected");
+    ws.onclose = () => {
+        console.debug("TD disconnected, reconnecting...");
+        setTimeout(connectWS, 3000);
+    };
+    ws.onerror = (e) => console.error("TD websocket error:", e);
+    ws.onmessage = (e) => console.debug("Server:", e.data);
+}
 
-#### Reconnection
-- If the connection drops, retry every 5 seconds with exponential backoff (max 60s)
-- Log reconnection attempts at WARNING level
+function sendId(buttonId) {
+    const id = buttonId.replace("button_", "");
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(id);
+        console.debug("Sent:", id);
+    } else {
+        console.warn("WS not connected");
+    }
+}
+
+connectWS();
+```
+
+Note: The `TD_WS_URL` value must be injected from the Python constant into the JS string. Use an f-string or `.replace()` when constructing the Script() component.
 
 ### Feature 4: Button handler
 
-When a user presses a thumbnail button:
+Handled entirely client-side. Each button's `onclick="sendId(this.id)"` calls the JS function above, which:
 
-1. Extract the numeric image ID from the button's `id` attribute (strip `button_` prefix)
-2. Send the ID as a plain text websocket message to TouchDesigner
+1. Strips `button_` prefix from the button ID
+2. Sends the numeric ID as a plain text websocket message directly to TouchDesigner
 
-Implementation options (pick one):
-- **Option A (server-side):** HTMX POST to `/press/{image_id}`, handler sends via the stored websocket connection
-- **Option B (client-side):** Not applicable here since the websocket client runs server-side
+No server-side route needed for button presses.
 
-Use Option A. Create route:
-```python
-@rt("/press/{image_id}")
-async def post(image_id: int):
-    await ws_connection.send(str(image_id))
-    logger.debug(f"Sent to TouchDesigner: {image_id}")
-    return ""  # empty 200 response
+### Feature 5. Websocket connection status
+
+Poll every 3s to check if the websocket connection is valid.
+
+If so, show "Connected"
+
+If not, change the button status to "Reconnect"
+
+No server-side websocket code — all websocket communication is browser-to-TouchDesigner
+
+### Feature 6. Message debounce
+
+Debounce on the browser side. If someone taps rapidly, don't send every press. Add a cooldown to the JS so it drops messages within a window:
+
 ```
+let lastSend = 0;
+const DEBOUNCE_MS = 100;
 
-Each button should use: `hx-post="/press/{image_id}" hx-swap="none"`
-
+function sendId(buttonId) {
+    const now = Date.now();
+    if (now - lastSend < DEBOUNCE_MS) return;
+    lastSend = now;
+    const id = buttonId.replace("button_", "");
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(id);
+    }
+}
+```
 ## Tests (tests/test_images.py)
 
 Mock the Wagtail API using `pytest` fixtures (do NOT hit the live API).
