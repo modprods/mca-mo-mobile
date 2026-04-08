@@ -1,11 +1,17 @@
 [project]
 name = "mca-mo-mobile"
 version = "0.1.0"
-description = "Add your description here"
+description = "Audience remote to procedural art installation"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "monsterui>=1.0.45",
     "python-dotenv>=1.2.2",
     "python-fasthtml>=0.13.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
 ]
