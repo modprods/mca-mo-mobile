@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 def _configure_logging() -> None:
     """Uvicorn installs handlers before app import; tune root level so DEBUG is visible when requested."""
     level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -32,6 +31,7 @@ GRID_ROWS = 12
 GRID_SIZE = GRID_COLS * GRID_ROWS
 
 WAGTAIL_API_BASE = os.environ.get("WAGTAIL_API_BASE", "").strip()
+AUDIO_PING = os.environ.get("AUDIO_PING", "").strip()
 TD_WS_URL = os.environ.get("WS_HOST", "").strip()
 
 mobile_shell_css = Style(NotStr("""
@@ -128,13 +128,16 @@ async def _load_images_at_startup() -> None:
 
 def _td_ws_script() -> Any:
     ws_url = TD_WS_URL.replace("\\", "\\\\").replace('"', '\\"')
+    audio_url = AUDIO_PING.replace("\\", "\\\\").replace('"', '\\"')
     return Script(
         NotStr(
             f"""
 const TD_WS_URL = "{ws_url}";
+const AUDIO_PING_URL = "{audio_url}";
 let ws = null;
 let lastSend = 0;
 const DEBOUNCE_MS = 100;
+const pingAudio = AUDIO_PING_URL ? new Audio(AUDIO_PING_URL) : null;
 
 function setWsBadge(connected) {{
   const el = document.getElementById("ws-status");
@@ -182,18 +185,32 @@ function extractImageId(buttonId) {{
   return /^\\d+$/.test(id) ? id : null;
 }}
 
-function sendId(buttonId) {{
-  const now = Date.now();
-  if (now - lastSend < DEBOUNCE_MS) {{
-    return;
+function playPing() {{
+  if (!pingAudio) return;
+  try {{
+    pingAudio.currentTime = 0;
+    const playPromise = pingAudio.play();
+    if (playPromise && typeof playPromise.catch === "function") {{
+      playPromise.catch(() => {{}});
+    }}
+  }} catch (_e) {{
+    // Ignore audio playback errors (autoplay policy, unsupported format, etc.)
   }}
-  lastSend = now;
+}}
 
+function sendId(buttonId) {{
   const id = extractImageId(buttonId);
   if (!id) {{
     console.warn("Invalid button id:", buttonId);
     return;
   }}
+  playPing();
+
+  const now = Date.now();
+  if (now - lastSend < DEBOUNCE_MS) {{
+    return;
+  }}
+  lastSend = now;
   if (isWsConnected()) {{
     ws.send(id);
     console.debug("Sent:", id);

@@ -184,6 +184,11 @@ function sendId(buttonId) {
     }
 }
 ```
+
+### Feature 6. Audio on button press
+
+Play AUDIO_PING URL sound when button pressed
+
 ## Tests (tests/test_images.py)
 
 Mock the Wagtail API using `pytest` fixtures (do NOT hit the live API).
