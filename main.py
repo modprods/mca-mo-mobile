@@ -128,6 +128,13 @@ ws_manager_task: asyncio.Task | None = None
 ws_should_stop = False
 
 
+def _ws_is_connected() -> bool:
+    if ws_connection is None:
+        return False
+    closed = getattr(ws_connection, "closed", False)
+    return not bool(closed)
+
+
 async def _load_images_at_startup() -> None:
     global images
     images = await fetch_all_images()
@@ -249,6 +256,28 @@ def _image_grid_cells() -> tuple[Any, ...]:
     return tuple(cells)
 
 
+def ws_status_badge() -> Any:
+    connected = _ws_is_connected()
+    label = "WS connected" if connected else "WS disconnected"
+    color = "#1d9e75" if connected else "#d85a30"
+    return Span(
+        label,
+        id="ws-status",
+        title="Tap to reconnect websocket",
+        hx_get="/status",
+        hx_post="/reconnect",
+        hx_trigger="load, every 3s",
+        hx_target="#ws-status",
+        hx_swap="outerHTML",
+        style=(
+            "display: inline-flex; align-items: center; justify-content: center; "
+            "padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 11px; "
+            f"font-weight: 600; letter-spacing: 0.02em; color: white; background: {color}; "
+            "cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;"
+        ),
+    )
+
+
 def layout():
     n_show = min(len(images), GRID_SIZE)
     shell_style = (
@@ -271,7 +300,8 @@ def layout():
                     f'{n_show} shown (max {GRID_SIZE})',
                     style='font-size: clamp(11px, 3vw, 13px); color: var(--color-text-tertiary);',
                 ),
-                style='display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px;',
+                ws_status_badge(),
+                style='display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;',
             ),
             Div(
                 *_image_grid_cells(),
@@ -316,6 +346,22 @@ def get():
         ),
     )
     return Title('More Optimism'), page
+
+
+@app.route("/status")
+def status():
+    return ws_status_badge()
+
+
+@app.route("/reconnect")
+async def reconnect():
+    if not WS_HOST:
+        logger.warning("Reconnect requested but WS_HOST is empty")
+        return ws_status_badge()
+    logger.info("Manual websocket reconnect requested")
+    await _stop_ws_client()
+    await _start_ws_client()
+    return ws_status_badge()
 
 
 @app.route("/press/{image_id}")
