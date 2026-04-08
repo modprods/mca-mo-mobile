@@ -4,6 +4,7 @@
 ## Stack
 - Python 3.12+, managed by uv (not pip, not poetry)
 - FastHTML via `from fasthtml.common import *`
+ - See https://fastht.ml/docs/llms-ctx.txt
 - httpx for all HTTP requests (never requests, never urllib)
 - websockets library for outbound websocket client connections
 - pytest + pytest-asyncio for tests
