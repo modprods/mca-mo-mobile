@@ -14,13 +14,13 @@ Reference repos for style conventions:
 
 ```
 moreoptimism/
-├── main.py              # FastHTML app entry point (create)
-├── pyproject.toml       # uv project config (create)
-├── .python-version      # pin to 3.12 (create)
-├── .cursorrules         # project conventions (create)
-├── README.md            # quickstart docs (create)
+├── main.py              # FastHTML app entry point (update)
+├── pyproject.toml       # uv project config (update)
+├── .python-version      # pin to 3.12 
+├── .cursorrules         # project conventions 
+├── README.md            # quickstart docs
 └── tests/
-    └── test_images.py   # pytest tests (create)
+    └── test_images.py   # pytest tests (update)
 ```
 
 ## pyproject.toml
