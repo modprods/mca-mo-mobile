@@ -1,11 +1,13 @@
 
 from fasthtml.common import *
+import asyncio
 import logging
 import os
 from typing import Any
 
 import httpx
 from dotenv import load_dotenv
+import websockets
 
 load_dotenv()
 
@@ -30,8 +32,11 @@ WS_PING_INTERVAL = 15
 GRID_COLS = 4
 GRID_ROWS = 12
 GRID_SIZE = GRID_COLS * GRID_ROWS
+WS_RECONNECT_BASE = 5
+WS_RECONNECT_MAX = 60
 
 WAGTAIL_API_BASE = os.environ.get("WAGTAIL_API_BASE", "").strip()
+WS_HOST = os.environ.get("WS_HOST", "").strip()
 
 mobile_shell_css = Style(NotStr("""
 html { -webkit-text-size-adjust: 100%; }
@@ -118,6 +123,9 @@ async def fetch_all_images(
 
 
 images: list[dict] = []
+ws_connection: Any | None = None
+ws_manager_task: asyncio.Task | None = None
+ws_should_stop = False
 
 
 async def _load_images_at_startup() -> None:
@@ -125,9 +133,91 @@ async def _load_images_at_startup() -> None:
     images = await fetch_all_images()
 
 
+async def _ws_ping_loop(conn: Any) -> None:
+    while True:
+        await asyncio.sleep(WS_PING_INTERVAL)
+        pong_waiter = await conn.ping()
+        await pong_waiter
+        logger.debug("WS pong received")
+
+
+async def _ws_receive_loop(conn: Any) -> None:
+    async for message in conn:
+        logger.debug("Server: %s", message)
+
+
+async def _run_ws_connection_once() -> None:
+    global ws_connection
+    async with websockets.connect(WS_HOST) as conn:
+        ws_connection = conn
+        logger.info("Connected to TouchDesigner websocket at %s", WS_HOST)
+
+        ping_task = asyncio.create_task(_ws_ping_loop(conn))
+        recv_task = asyncio.create_task(_ws_receive_loop(conn))
+        done, pending = await asyncio.wait(
+            {ping_task, recv_task},
+            return_when=asyncio.FIRST_EXCEPTION,
+        )
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+        for task in done:
+            exc = task.exception()
+            if exc:
+                raise exc
+
+
+async def _ws_manager_loop() -> None:
+    global ws_connection
+    backoff = WS_RECONNECT_BASE
+
+    while not ws_should_stop:
+        try:
+            await _run_ws_connection_once()
+            backoff = WS_RECONNECT_BASE
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            ws_connection = None
+            if ws_should_stop:
+                break
+            logger.warning(
+                "Websocket disconnected (%s). Reconnecting in %ss",
+                exc.__class__.__name__,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, WS_RECONNECT_MAX)
+
+
+async def _start_ws_client() -> None:
+    global ws_manager_task, ws_should_stop
+    ws_should_stop = False
+    if not WS_HOST:
+        logger.warning("WS_HOST is empty; websocket client not started")
+        return
+    ws_manager_task = asyncio.create_task(_ws_manager_loop())
+
+
+async def _stop_ws_client() -> None:
+    global ws_manager_task, ws_connection, ws_should_stop
+    ws_should_stop = True
+
+    if ws_manager_task:
+        ws_manager_task.cancel()
+        await asyncio.gather(ws_manager_task, return_exceptions=True)
+        ws_manager_task = None
+
+    if ws_connection:
+        await ws_connection.close()
+        ws_connection = None
+
+
 app = FastHTML(
     hdrs=(mobile_shell_css, tlink, dlink, picolink),
-    on_startup=_load_images_at_startup,
+    on_startup=(_load_images_at_startup, _start_ws_client),
+    on_shutdown=_stop_ws_client,
 )
 
 
@@ -230,8 +320,18 @@ def get():
 
 @app.route("/press/{image_id}")
 async def post(image_id: int):
-    """HTMX target; TouchDesigner send is wired in Feature 4."""
-    logger.debug("Thumbnail press: %s (websocket client not connected yet)", image_id)
+    """Send pressed image id to TouchDesigner over outbound websocket."""
+    global ws_connection
+    if ws_connection is None:
+        logger.warning("Cannot send image %s: websocket not connected", image_id)
+        return ""
+    try:
+        await ws_connection.send(str(image_id))
+        logger.debug("Sent to TouchDesigner: %s", image_id)
+    except Exception:
+        ws_connection = None
+        logger.exception("Failed sending image %s over websocket", image_id)
+        return ""
     return ""
 
 
