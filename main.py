@@ -317,7 +317,7 @@ def layout():
             ),
             Div(
                 Span(
-                    'tap any thumbnail to send',
+                    'Tap an image to send',
                     style='font-size: clamp(10px, 2.8vw, 12px); color: var(--color-text-tertiary);',
                 ),
                 style='margin-top: 12px; text-align: center;',
