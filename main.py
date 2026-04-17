@@ -28,7 +28,6 @@ WAGTAIL_PAGE_SIZE = 20
 WS_PING_INTERVAL = 15
 GRID_COLS = 4
 GRID_ROWS = 18
-GRID_SIZE = GRID_COLS * GRID_ROWS
 
 WAGTAIL_API_BASE = os.environ.get("WAGTAIL_API_BASE", "").strip()
 AUDIO_PING = os.environ.get("AUDIO_PING", "").strip()
@@ -245,8 +244,7 @@ app = FastHTML(
 
 
 def _image_grid_cells() -> tuple[Any, ...]:
-    """Build GRID_SIZE slot widgets: thumbnail buttons plus empty placeholders."""
-    displayed = images[:GRID_SIZE]
+    """Build one thumbnail button per image."""
     cells: list[Any] = []
     btn_style = (
         "aspect-ratio: 1; width: 100%; min-width: 0; min-height: 44px; padding: 0; border: none; "
@@ -254,7 +252,7 @@ def _image_grid_cells() -> tuple[Any, ...]:
         "background-color: var(--color-background-secondary, #eee); "
         "-webkit-tap-highlight-color: transparent; touch-action: manipulation;"
     )
-    for img in displayed:
+    for img in images:
         iid = img["id"]
         thumb = img["thumbnail_url"]
         cells.append(
@@ -266,8 +264,6 @@ def _image_grid_cells() -> tuple[Any, ...]:
                 onclick="sendId(this.id)",
             )
         )
-    while len(cells) < GRID_SIZE:
-        cells.append(Div(style="aspect-ratio: 1; min-width: 0; min-height: 0;"))
     return tuple(cells)
 
 
@@ -281,13 +277,14 @@ def ws_status_badge() -> Any:
             "display: inline-flex; align-items: center; justify-content: center; "
             "padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 11px; "
             "font-weight: 600; letter-spacing: 0.02em; color: white; background: #d85a30; "
-            "cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;"
+            "cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; "
+            "width: fit-content; justify-self: end;"
         ),
     )
 
 
 def layout():
-    n_show = min(len(images), GRID_SIZE)
+    n_show = len(images)
     shell_style = (
         "display: flex; flex-direction: column; gap: clamp(1rem, 3vw, 2.5rem); "
         "width: 100%; max-width: 100%; min-width: 0; margin: 0 auto; "
@@ -301,21 +298,21 @@ def layout():
         Div(
             Div(
                 Span(
-                    'All artifacts',
-                    style='font-size: clamp(12px, 3.5vw, 14px); color: var(--color-text-secondary);',
+                    f'',
+                    style='font-size: clamp(11px, 3vw, 13px); color: var(--color-text-tertiary);',
                 ),
                 Span(
-                    f'{n_show} shown (max {GRID_SIZE})',
+                    f'{n_show} artefacts shown',
                     style='font-size: clamp(11px, 3vw, 13px); color: var(--color-text-tertiary);',
                 ),
                 ws_status_badge(),
-                style='display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;',
+                style='display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin-bottom: 12px;',
             ),
             Div(
                 *_image_grid_cells(),
                 style=(
-                    f'display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); '
-                    f'gap: {grid_gap}; width: 100%; min-width: 0;'
+                    f'display: grid; grid-template-columns: repeat({GRID_COLS}, minmax(0, 1fr)); '
+                    f'gap: {grid_gap}; width: 100%; min-width: 0; margin: {grid_gap};'
                 ),
             ),
             Div(

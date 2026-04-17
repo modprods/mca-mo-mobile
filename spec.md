@@ -101,15 +101,16 @@ def make_thumbnail_url(download_url: str, size: str = "165x165") -> str:
 
 ### Feature 2: Tile layout
 
-The `GET /` route returns a 4-column × 12-row grid of image buttons.
+The `GET /` route returns a 4-column × X-row grid of image buttons based on the number of images in the API.
 
 - Use CSS Grid: `display: grid; grid-template-columns: repeat(4, 1fr);`
 - Each cell is a `<button>` with:
   - `id="button_{image_id}"` (e.g., `button_591`)
   - Background image set to the `thumbnail_url` via inline style
   - `onclick="sendId(this.id)"` to trigger the client-side websocket send
-- If fewer than 48 images, leave remaining cells empty
-- If more than 48 images, only display the first 48
+- Lay out cells with equal margins in all directions
+- At the top of the image cells, centered, should be an image count - e.g. "72 shown" for 72 images
+- There should be no need to hardcode the number of cells. 
 
 ### Feature 3: Client-side websocket (browser to TouchDesigner)
 
