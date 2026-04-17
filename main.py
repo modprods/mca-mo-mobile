@@ -247,7 +247,7 @@ def _image_grid_cells() -> tuple[Any, ...]:
     """Build one thumbnail button per image."""
     cells: list[Any] = []
     btn_style = (
-        "aspect-ratio: 1; width: 100%; min-width: 0; min-height: 44px; padding: 0; border: none; "
+        "aspect-ratio: 1; width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 0; border: none; "
         "border-radius: 4px; cursor: pointer; background-size: cover; background-position: center; "
         "background-color: var(--color-background-secondary, #eee); "
         "-webkit-tap-highlight-color: transparent; touch-action: manipulation;"
