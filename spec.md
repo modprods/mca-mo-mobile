@@ -214,6 +214,35 @@ def test_thumbnail_url_transform():
     assert make_thumbnail_url(original) == expected
 ```
 
+### Feature 7. On load, show a landing page form
+
+"To begin, tell us your age:"
+
+[Drop-down menu, required] Under 16, 16-24, 25-34, 35-44, 45-54, 65+, Prefer not to share
+
+"Would you like us to send you a Pop-timism screenshot?"
+
+[Email, optional]
+
+[Tick box] "Yes, I'd like to receive updates and emails from the Museum of Contemporary Art Australia."
+
+[Submit button] "Start"
+
+### Feature 8. On form submit, process form
+
+Check if email is valid.
+
+If valid, download latest image snapshot from the .env SCREENSHOT_URL endpoint
+
+Generate email message with attached image a related MIME part with a Content-ID, then reference that CID from the HTML body
+
+Send email message to user's supplied email address using the .env EMAIL_HOST_* email gateway settings 
+
+Hide the landing page
+
+### Feature 9. Log landing page form results to SharePoint
+
+
 ## Constraints
 
 - Do NOT use FastHTML's `exts='ws'` or `ws_send` for the TouchDesigner connection
