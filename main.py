@@ -80,8 +80,8 @@ AGE_LABELS = dict(AGE_OPTIONS)
 
 SCREENSHOT_CID = "screenshot"
 SNAPSHOT_EMAIL_SUBJECT = "Your Pop-timism screenshot"
-SNAPSHOT_ERROR_MESSAGE = "We could not send your screenshot. Please try again."
-SUBMISSION_ERROR_MESSAGE = "Something went wrong saving your submission. Please try again."
+SNAPSHOT_ERROR_MESSAGE = "We could not send your screenshot. Refresh page to try again."
+SUBMISSION_ERROR_MESSAGE = "Something went wrong saving your submission. Refresh page to try again."
 TOAST_DURATION_MS = 6000
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
