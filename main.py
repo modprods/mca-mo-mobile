@@ -1,11 +1,13 @@
 
 from fasthtml.common import *
 import asyncio
+import csv
 import json
 import logging
 import os
 import re
 import smtplib
+from datetime import UTC, datetime
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -58,9 +60,28 @@ EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "").strip()
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "").strip().lower() in {"1", "true", "yes", "on"}
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER", "").strip().strip("'\"") or EMAIL_HOST_USER
 
+TENANT_ID = os.environ.get("TENANT_ID", "").strip()
+CLIENT_ID = os.environ.get("CLIENT_ID", "").strip()
+CLIENT_SECRET = os.environ.get("CLIENT_SECRET", "").strip()
+TOKEN_ENDPOINT = os.environ.get("TOKEN_ENDPOINT", "").strip()
+GRANT_TYPE = os.environ.get("GRANT_TYPE", "client_credentials").strip()
+SCOPE = os.environ.get("SCOPE", "https://graph.microsoft.com/.default").strip()
+SHAREPOINT_URL = os.environ.get("SHAREPOINT_URL", "").strip()
+SITE_ID = os.environ.get("SITE_ID", "").strip()
+WORKBOOK_NAME = os.environ.get("WORKBOOK_NAME", "PoptimismFormSubmissions.xlsx").strip()
+WORKBOOK_LOCATION = os.environ.get("LOCATION", "").strip() or WORKBOOK_NAME
+TABLE_NAME = os.environ.get("TABLE_NAME", "FormSubmissions").strip()
+
+GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
+FORM_LOG_PATH = "form.log"
+ERRORS_LOG_PATH = "errors.log"
+FORM_TABLE_HEADERS = ["age", "send_screenshot", "email", "send_further_emails"]
+AGE_LABELS = dict(AGE_OPTIONS)
+
 SCREENSHOT_CID = "screenshot"
 SNAPSHOT_EMAIL_SUBJECT = "Your Pop-timism screenshot"
 SNAPSHOT_ERROR_MESSAGE = "We could not send your screenshot. Please try again."
+SUBMISSION_ERROR_MESSAGE = "Something went wrong saving your submission. Please try again."
 TOAST_DURATION_MS = 6000
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -150,6 +171,30 @@ def _image_subtype(content_type: str) -> str:
     return content_type.split("/", 1)[1].split(";", 1)[0].strip() or "png"
 
 
+def build_snapshot_email_html() -> str:
+    """HTML body for the snapshot email with a responsive inline image."""
+    container_style = "max-width: 100%; width: 100%; margin: 0; padding: 0;"
+    image_style = (
+        "display: block; max-width: 100%; width: 100%; height: auto; "
+        "border: 0; outline: none; text-decoration: none; "
+        "-ms-interpolation-mode: bicubic;"
+    )
+    return (
+        "<html><body style=\"margin: 0; padding: 0;\">"
+        "<p>Thank you for visiting Pop-timism.</p>"
+        f'<div style="{container_style}">'
+        f'<img src="cid:{SCREENSHOT_CID}" alt="Pop-timism screenshot" style="{image_style}">'
+        "</div>"
+        '<p>Pop-timism was designed and created by <a href="https://mod.studio">Mod</a> and '
+        '<a href="https://www.fridalasvegas.com/">Frida Las Vegas</a> in collaboration with the '
+        '<a href="https://www.mca.com.au">MCA<a/></p>'
+        "<p>Experience Design, Software Development and Operations by Mod<br />Visual Design by Frida Las Vegas</p>"
+        "<p>This email was sent in response to a web form submission on behalf of the "
+        "<a href='https://www.mca.com.au'>Museum of Contemporary Art Australia</a>.</p>"
+        "</body></html>"
+    )
+
+
 def build_snapshot_email(
     *,
     to_email: str,
@@ -159,15 +204,7 @@ def build_snapshot_email(
 ) -> MIMEMultipart:
     """Build a related MIME message with inline screenshot referenced by CID."""
     from_header, _ = parse_sender(from_email or EMAIL_SENDER)
-    html = (
-        "<html><body>"
-        "<p>Thank you for visiting Pop-timism.</p>"
-        f'<p><img src="cid:{SCREENSHOT_CID}" alt="Pop-timism screenshot"></p>'
-        '<p>Pop-timism was designed and created by <a href="https://mod.studio">Mod</a> and <a href="https://www.fridalasvegas.com/">Frida Las Vegas</a> in collaboration with the <a href="https://www.mca.com.au">MCA<a/></p>'
-        "<p>Experience Design, Software Development and Operations - Mod<br />Visual Design - Frida Las Vegas</p>"
-        "<p>This email was send in response to a web form submission on behalf of the <a href='https://www.mca.com.au'>Museum of Contemporary Art Australia</a>.</p>"
-        "</body></html>"
-    )
+    html = build_snapshot_email_html()
     msg = MIMEMultipart("related")
     msg["Subject"] = SNAPSHOT_EMAIL_SUBJECT
     msg["From"] = from_header
@@ -245,12 +282,176 @@ def error_toast(message: str) -> Any:
     return Div(message, id="mo-toast")
 
 
-def _start_response_headers(email: str = "") -> HtmxResponseHeaders:
-    """Reveal the app immediately; queue background snapshot email when provided."""
-    if email:
-        trigger = json.dumps({"reveal-app": None, "send-snapshot": {"email": email}})
-    else:
-        trigger = "reveal-app"
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def log_form_transaction(message: str) -> None:
+    with open(FORM_LOG_PATH, "a", encoding="utf-8") as fh:
+        fh.write(f"{_utc_now()} {message}\n")
+
+
+def log_form_error(message: str) -> None:
+    with open(ERRORS_LOG_PATH, "a", encoding="utf-8") as fh:
+        fh.write(f"{_utc_now()} {message}\n")
+
+
+def form_submission_row_values(*, age: str, email: str, mca_updates: bool) -> list:
+    """Build one Excel row: age, send_screenshot, email, send_further_emails."""
+    return [
+        AGE_LABELS.get(age, age),
+        bool(email),
+        email,
+        mca_updates,
+    ]
+
+
+def _sharepoint_table_base_url() -> str:
+    return (
+        f"{GRAPH_API_BASE}/sites/{SITE_ID}/drive/root:/{WORKBOOK_LOCATION}:"
+        f"/workbook/tables/{TABLE_NAME}"
+    )
+
+
+def sharepoint_rows_url() -> str:
+    return f"{_sharepoint_table_base_url()}/rows/add"
+
+
+def sharepoint_table_rows_url() -> str:
+    return f"{_sharepoint_table_base_url()}/rows"
+
+
+def sharepoint_rows_from_response(data: dict[str, Any]) -> list[list[Any]]:
+    """Extract table row value lists from a Graph workbook rows response."""
+    rows: list[list[Any]] = []
+    for item in data.get("value", []):
+        for row in item.get("values", []):
+            rows.append(list(row))
+    return rows
+
+
+def write_form_rows_csv(rows: list[list[Any]], out: Any) -> None:
+    """Write header and data rows as CSV."""
+    writer = csv.writer(out)
+    writer.writerow(FORM_TABLE_HEADERS)
+    writer.writerows(rows)
+
+
+async def fetch_graph_access_token(
+    client: httpx.AsyncClient,
+    *,
+    token_endpoint: str | None = None,
+) -> str:
+    endpoint = (token_endpoint or TOKEN_ENDPOINT).strip()
+    if not endpoint and TENANT_ID:
+        endpoint = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+    if not endpoint:
+        raise ValueError("TOKEN_ENDPOINT is empty")
+    if not CLIENT_ID or not CLIENT_SECRET:
+        raise ValueError("SharePoint credentials are not configured")
+
+    response = await client.post(
+        endpoint,
+        data={
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "grant_type": GRANT_TYPE,
+            "scope": SCOPE,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    if response.is_error:
+        detail = response.text
+        try:
+            payload = response.json()
+            detail = str(payload.get("error_description") or payload.get("error") or detail)
+        except ValueError:
+            pass
+        logger.error("Graph token request failed (%s): %s", response.status_code, detail)
+        response.raise_for_status()
+
+    token = response.json().get("access_token")
+    if not token:
+        raise ValueError("Graph token response missing access_token")
+    return str(token)
+
+
+async def append_sharepoint_row(
+    row_values: list,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> None:
+    if not SITE_ID:
+        raise ValueError("SITE_ID is empty")
+
+    close_client = client is None
+    if client is None:
+        client = httpx.AsyncClient(timeout=30.0)
+
+    try:
+        token = await fetch_graph_access_token(client)
+        response = await client.post(
+            sharepoint_rows_url(),
+            json={"values": [row_values]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response.raise_for_status()
+        logger.info("SharePoint row appended for age=%s", row_values[0])
+    except httpx.HTTPError:
+        logger.exception("SharePoint row append failed")
+        raise
+    finally:
+        if close_client:
+            await client.aclose()
+
+
+async def fetch_sharepoint_table_rows(
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> list[list[Any]]:
+    """Fetch all rows from the SharePoint FormSubmissions Excel table."""
+    if not SITE_ID:
+        raise ValueError("SITE_ID is empty")
+
+    close_client = client is None
+    if client is None:
+        client = httpx.AsyncClient(timeout=30.0)
+
+    try:
+        token = await fetch_graph_access_token(client)
+        headers = {"Authorization": f"Bearer {token}"}
+        url: str | None = sharepoint_table_rows_url()
+        rows: list[list[Any]] = []
+
+        while url:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            rows.extend(sharepoint_rows_from_response(data))
+            url = data.get("@odata.nextLink")
+
+        logger.debug("Fetched %s SharePoint table rows", len(rows))
+        return rows
+    except httpx.HTTPError:
+        logger.exception("SharePoint table read failed")
+        raise
+    finally:
+        if close_client:
+            await client.aclose()
+
+
+def _start_response_headers(*, age: str, email: str, mca_updates: bool) -> HtmxResponseHeaders:
+    """Reveal the app immediately; queue background email and SharePoint logging."""
+    trigger = json.dumps(
+        {
+            "reveal-app": None,
+            "process-submission": {
+                "age": age,
+                "email": email,
+                "mca_updates": mca_updates,
+            },
+        }
+    )
     return HtmxResponseHeaders(trigger=trigger)
 
 
@@ -435,13 +636,17 @@ function dismissToastLater() {{
 }}
 
 document.body.addEventListener("reveal-app", revealApp);
-document.body.addEventListener("send-snapshot", (evt) => {{
-  const email = evt.detail?.email;
-  if (!email || !window.htmx) return;
-  htmx.ajax("POST", "/send-snapshot", {{
+document.body.addEventListener("process-submission", (evt) => {{
+  const detail = evt.detail || {{}};
+  if (!detail.age || !window.htmx) return;
+  htmx.ajax("POST", "/process-submission", {{
     target: "#mo-toast-host",
     swap: "innerHTML",
-    values: {{ email }},
+    values: {{
+      age: detail.age,
+      email: detail.email || "",
+      mca_updates: detail.mca_updates ? "on" : "",
+    }},
   }});
 }});
 document.body.addEventListener("htmx:afterSwap", (evt) => {{
@@ -540,7 +745,7 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
             ),
             Div(
                 Label(
-                    "Would you like us to send you a screenshot of your pop-timism creation?",
+                    "Would you like us to send you a screenshot of your Pop-timism creation?",
                     _for="email",
                     style=_label_style(),
                 ),
@@ -748,22 +953,50 @@ async def start(req):
         mca_updates,
     )
 
-    return "", _start_response_headers(email)
+    return "", _start_response_headers(age=age, email=email, mca_updates=mca_updates)
 
 
-@app.route("/send-snapshot", methods=["POST"])
-async def send_snapshot(req):
+@app.route("/process-submission", methods=["POST"])
+async def process_submission(req):
     form = await req.form()
+    age = str(form.get("age", "")).strip()
     email = str(form.get("email", "")).strip()
+    mca_updates = form.get("mca_updates") == "on"
 
-    if not email or not is_valid_email(email):
-        logger.info("Snapshot send rejected: invalid email %s", email or "(empty)")
+    if not age:
+        log_form_error("process-submission rejected: missing age")
+        return error_toast(SUBMISSION_ERROR_MESSAGE)
+
+    if email and not is_valid_email(email):
+        log_form_error(f"process-submission rejected: invalid email {email}")
         return error_toast(SNAPSHOT_ERROR_MESSAGE)
 
+    email_error = False
+
+    if email:
+        try:
+            await send_snapshot_email(email)
+        except (httpx.HTTPError, OSError, smtplib.SMTPException, ValueError) as exc:
+            logger.exception("Failed to send snapshot email to %s", email)
+            log_form_error(f"email failed to {email}: {exc}")
+            email_error = True
+
+    row_values = form_submission_row_values(age=age, email=email, mca_updates=mca_updates)
     try:
-        await send_snapshot_email(email)
-    except (httpx.HTTPError, OSError, smtplib.SMTPException, ValueError):
-        logger.exception("Failed to send snapshot email to %s", email)
+        await append_sharepoint_row(row_values)
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.exception("Failed to append SharePoint row for age=%s", age)
+        log_form_error(
+            f"sharepoint failed age={row_values[0]!r} email={email or '(none)'}: {exc}"
+        )
+        return error_toast(SUBMISSION_ERROR_MESSAGE)
+
+    log_form_transaction(
+        f"age={row_values[0]!r} send_screenshot={row_values[1]} email={email or '(none)'!r} "
+        f"send_further_emails={row_values[3]}"
+    )
+
+    if email_error:
         return error_toast(SNAPSHOT_ERROR_MESSAGE)
 
     return ""

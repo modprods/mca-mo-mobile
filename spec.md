@@ -236,7 +236,9 @@ If email valid, hide the landing page immediately
 
 In the background, download latest image snapshot from the .env SCREENSHOT_URL endpoint
 
-Generate email message with attached image a related MIME part with a Content-ID, then reference that CID from the HTML body
+Generate email message with attached image a related MIME part with a Content-ID, then reference that CID from the HTML body.
+
+Style the image in the email body so it fits the parent container - the whole image is visible.
 
 Send email message to user's supplied email address using the .env EMAIL_HOST_* email gateway settings 
 
@@ -294,7 +296,7 @@ WORKBOOK_NAME
 
 ### Feature 10. Stand-alone script to read SharePoint file
 
-Using the credentials from Feature 9, create a CLI test-excel.py file that reads the same file and writes each row as CSV to STDOUT
+Using the credentials from Feature 9, create a CLI read-excel.py file that reads the same file and writes each row as CSV to STDOUT
 
 ## Constraints
 
