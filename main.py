@@ -121,6 +121,33 @@ body {
   text-align: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
+#landing-page {
+  background: var(--color-background-secondary, #f4f4f5);
+  color: var(--pico-color, CanvasText);
+}
+#landing-page h1,
+#landing-page label {
+  color: inherit;
+}
+#landing-page .landing-field {
+  border: 1px solid var(--pico-muted-border-color, #ccc);
+  background: var(--pico-background-color, #fff);
+  color: var(--pico-color, inherit);
+}
+@media (prefers-color-scheme: dark) {
+  #landing-page {
+    background: #1e2128;
+    color: #e8eaed;
+  }
+  #landing-page .landing-field {
+    background: #32363f;
+    color: #e8eaed;
+    border-color: #4a515c;
+  }
+  #landing-page .landing-field::placeholder {
+    color: #9aa3ad;
+  }
+}
 """))
 
 tlink = Script(src="https://cdn.tailwindcss.com")
@@ -699,8 +726,7 @@ def _image_grid_cells() -> tuple[Any, ...]:
 def _field_style() -> str:
     return (
         "width: 100%; min-width: 0; padding: 0.65rem 0.75rem; font-size: 1rem; "
-        "border-radius: var(--border-radius, 6px); border: 1px solid var(--pico-muted-border-color, #ccc); "
-        "background: var(--pico-background-color, #fff); color: var(--pico-color, inherit);"
+        "border-radius: var(--border-radius, 6px);"
     )
 
 
@@ -732,6 +758,7 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
                     name="age",
                     id="age",
                     required=True,
+                    cls="landing-field",
                     aria_invalid="true" if age_error else None,
                     style=_field_style(),
                 ),
@@ -756,6 +783,7 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
                     placeholder="Email (optional)",
                     autocomplete="email",
                     inputmode="email",
+                    cls="landing-field",
                     aria_invalid="true" if email_error else None,
                     style=_field_style(),
                 ),
@@ -802,7 +830,6 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
         ),
         id="landing-page",
         style=(
-            f"background: var(--color-background-secondary, #f4f4f5); "
             f"border-radius: var(--border-radius-lg, 12px); padding: {card_pad}; "
             "width: 100%; max-width: 100%; min-width: 0;"
         ),
