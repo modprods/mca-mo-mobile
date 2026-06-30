@@ -137,7 +137,9 @@ def build_snapshot_email(
         "<html><body>"
         "<p>Thank you for visiting Pop-timism.</p>"
         f'<p><img src="cid:{SCREENSHOT_CID}" alt="Pop-timism screenshot"></p>'
-        "<p>This email was send in response to a Pop-timism website form submission on behalf of the <a href='https://www.mca.com.au'>Museum of Contemporary Art Australia</a>.</p>"
+        '<p>Pop-timism was designed and created by <a href="https://mod.studio">Mod</a> and <a href="https://www.fridalasvegas.com/">Frida Las Vegas</a> in collaboration with the <a href="https://www.mca.com.au">MCA<a/></p>'
+        "<p>Experience Design, Software Development and Operations - Mod<br />Visual Design - Frida Las Vegas</p>"
+        "<p>This email was send in response to a web form submission on behalf of the <a href='https://www.mca.com.au'>Museum of Contemporary Art Australia</a>.</p>"
         "</body></html>"
     )
     msg = MIMEMultipart("related")
@@ -452,7 +454,7 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
     ]
     return Div(
         H1(
-            "More Optimism",
+            "Pop-timism",
             style=(
                 "margin: 0 0 1.25rem; font-size: clamp(1.35rem, 5.5vw, 1.85rem); "
                 "font-weight: 600; line-height: 1.2; text-align: center;"
@@ -479,7 +481,7 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
             ),
             Div(
                 Label(
-                    "Would you like us to send you a Pop-timism screenshot?",
+                    "Would you like us to send you a screenshot of your pop-timism creation?",
                     _for="email",
                     style=_label_style(),
                 ),
