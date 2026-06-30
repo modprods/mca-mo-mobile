@@ -230,18 +230,71 @@ def test_thumbnail_url_transform():
 
 ### Feature 8. On form submit, process form
 
-Check if email is valid.
+Check if email is valid. 
 
-If valid, download latest image snapshot from the .env SCREENSHOT_URL endpoint
+If email valid, hide the landing page immediately
+
+In the background, download latest image snapshot from the .env SCREENSHOT_URL endpoint
 
 Generate email message with attached image a related MIME part with a Content-ID, then reference that CID from the HTML body
 
 Send email message to user's supplied email address using the .env EMAIL_HOST_* email gateway settings 
 
-Hide the landing page
+If there are any errors, display a toast top of the screen
 
-### Feature 9. Log landing page form results to SharePoint
 
+### Feature 9. Write landing page form results to SharePoint
+
+Refactor the Submit process so that after email is sent, write a 
+ to write a new row to the Sharepoint hosted Excel file
+
+The table header is "age, send_screenshot, email, send_further_emails"
+
+Log the transaction to a local file 'form.log' also
+
+Log any errors to local file 'errors.log' (to complement the on-screen toast in Feature 8)
+
+API
+Microsoft Graph REST API v1.0
+ 
+Method
+POST
+ 
+Endpoint
+/sites/{SiteID}/drive/root:/PoptimismFormSubmissions.xlsx:/workbook/tables/FormSubmissions/rows/add
+ 
+Purpose
+Append one or more rows to the FormSubmissions Excel table.
+ 
+ 
+Permissions
+ 
+The application has been configured for application-only access using Microsoft Graph:
+App permission: Sites.Selected
+Site-specific permission: Write
+ 
+The application is expected to authenticate using the OAuth 2.0 Client Credentials flow, read and write content within the PoptimismSharePoint site, and access the PoptimismFormSubmissions.xlsx workbook in order to append rows to the FormSubmissions table.
+
+#### Credentials
+
+Use the following variables from .env to establish the connection
+
+```
+TENANT_ID
+CLIENT_ID
+CLIENT_SECRET
+TOKEN_ENDPOINT
+GRANT_TYPE 
+SCOPE
+SHAREPOINT_URL 
+SITE_ID 
+WORKBOOK_NAME
+```
+
+
+### Feature 10. Stand-alone script to read SharePoint file
+
+Using the credentials from Feature 9, create a CLI test-excel.py file that reads the same file and writes each row as CSV to STDOUT
 
 ## Constraints
 

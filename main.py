@@ -1,6 +1,7 @@
 
 from fasthtml.common import *
 import asyncio
+import json
 import logging
 import os
 import re
@@ -59,6 +60,8 @@ EMAIL_SENDER = os.environ.get("EMAIL_SENDER", "").strip().strip("'\"") or EMAIL_
 
 SCREENSHOT_CID = "screenshot"
 SNAPSHOT_EMAIL_SUBJECT = "Your Pop-timism screenshot"
+SNAPSHOT_ERROR_MESSAGE = "We could not send your screenshot. Please try again."
+TOAST_DURATION_MS = 6000
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 mobile_shell_css = Style(NotStr("""
@@ -73,6 +76,29 @@ body {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+}
+#mo-toast-host {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2000;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  padding: max(12px, env(safe-area-inset-top)) 12px 0;
+}
+#mo-toast {
+  pointer-events: auto;
+  max-width: min(92vw, 28rem);
+  padding: 0.75rem 1rem;
+  background: #b42318;
+  color: white;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 """))
 
@@ -166,10 +192,10 @@ async def fetch_snapshot(
 
     close_client = client is None
     if client is None:
-        client = httpx.AsyncClient(timeout=30.0)
+        client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
 
     try:
-        response = await client.get(snapshot_url)
+        response = await client.get(snapshot_url, follow_redirects=True)
         response.raise_for_status()
         content_type = response.headers.get("content-type", "image/png").split(";", 1)[0].strip()
         if not content_type.startswith("image/"):
@@ -212,6 +238,20 @@ async def send_snapshot_email(
     message = build_snapshot_email(to_email=to_email, image_bytes=image_bytes, content_type=content_type)
     await asyncio.to_thread(send_email_message, message)
     logger.info("Snapshot email sent to %s", to_email)
+
+
+def error_toast(message: str) -> Any:
+    """Top-of-screen error toast returned to #mo-toast-host."""
+    return Div(message, id="mo-toast")
+
+
+def _start_response_headers(email: str = "") -> HtmxResponseHeaders:
+    """Reveal the app immediately; queue background snapshot email when provided."""
+    if email:
+        trigger = json.dumps({"reveal-app": None, "send-snapshot": {"email": email}})
+    else:
+        trigger = "reveal-app"
+    return HtmxResponseHeaders(trigger=trigger)
 
 
 def _item_download_url(item: dict[str, Any]) -> str:
@@ -387,9 +427,28 @@ function revealApp() {{
   if (app) app.removeAttribute("hidden");
 }}
 
+function dismissToastLater() {{
+  setTimeout(() => {{
+    const host = document.getElementById("mo-toast-host");
+    if (host) host.innerHTML = "";
+  }}, {TOAST_DURATION_MS});
+}}
+
 document.body.addEventListener("reveal-app", revealApp);
+document.body.addEventListener("send-snapshot", (evt) => {{
+  const email = evt.detail?.email;
+  if (!email || !window.htmx) return;
+  htmx.ajax("POST", "/send-snapshot", {{
+    target: "#mo-toast-host",
+    swap: "innerHTML",
+    values: {{ email }},
+  }});
+}});
 document.body.addEventListener("htmx:afterSwap", (evt) => {{
   if (!document.getElementById("landing-page")) revealApp();
+  if (evt.detail.target?.id === "mo-toast-host" && document.getElementById("mo-toast")) {{
+    dismissToastLater();
+  }}
 }});
 
 window.sendId = sendId;
@@ -646,10 +705,15 @@ def _app_content(*, hidden: bool = False) -> Any:
     )
 
 
+def _toast_host() -> Any:
+    return Div(id="mo-toast-host")
+
+
 # The main screen
 @app.route("/")
 def get():
     page = Body(
+        _toast_host(),
         Div(
             landing_form(),
             _app_content(hidden=True),
@@ -684,16 +748,25 @@ async def start(req):
         mca_updates,
     )
 
-    if email:
-        try:
-            await send_snapshot_email(email)
-        except (httpx.HTTPError, OSError, smtplib.SMTPException, ValueError):
-            logger.exception("Failed to send snapshot email to %s", email)
-            return landing_form(
-                email_error="We could not send your screenshot. Please try again.",
-            )
+    return "", _start_response_headers(email)
 
-    return "", HtmxResponseHeaders(trigger="reveal-app")
+
+@app.route("/send-snapshot", methods=["POST"])
+async def send_snapshot(req):
+    form = await req.form()
+    email = str(form.get("email", "")).strip()
+
+    if not email or not is_valid_email(email):
+        logger.info("Snapshot send rejected: invalid email %s", email or "(empty)")
+        return error_toast(SNAPSHOT_ERROR_MESSAGE)
+
+    try:
+        await send_snapshot_email(email)
+    except (httpx.HTTPError, OSError, smtplib.SMTPException, ValueError):
+        logger.exception("Failed to send snapshot email to %s", email)
+        return error_toast(SNAPSHOT_ERROR_MESSAGE)
+
+    return ""
 
 
 
