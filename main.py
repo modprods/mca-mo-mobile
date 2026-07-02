@@ -778,7 +778,7 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
             alt="Museum of Contemporary Art Australia",
             cls="landing-logo",
             style=(
-                "display: block; margin: 0 auto 1.25rem; "
+                "display: block; margin: 0 0 1.25rem; "
                 "max-width: min(180px, 27.5vw); height: auto;"
             ),
         ),
