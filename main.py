@@ -45,6 +45,7 @@ AGE_OPTIONS: list[tuple[str, str]] = [
     ("25_34", "25-34"),
     ("35_44", "35-44"),
     ("45_54", "45-54"),
+    ("55_64", "55-64"),
     ("65_plus", "65+"),
     ("prefer_not_to_share", "Prefer not to share"),
 ]
@@ -82,10 +83,22 @@ SCREENSHOT_CID = "screenshot"
 SNAPSHOT_EMAIL_SUBJECT = "Your Pop-timism screenshot"
 SNAPSHOT_ERROR_MESSAGE = "We could not send your screenshot. Refresh page to try again."
 SUBMISSION_ERROR_MESSAGE = "Something went wrong saving your submission. Refresh page to try again."
+MCA_LOGO_URL = "https://dhbvezz9j5025.cloudfront.net/productions/mca/img/footer_mca_logo.svg"
+MCA_FONT_URL = "https://dhbvezz9j5025.cloudfront.net/productions/mca/fonts/MCASelecta-Regular.otf"
 TOAST_DURATION_MS = 6000
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-mobile_shell_css = Style(NotStr("""
+MCA_FONT_FACE_CSS = f"""
+@font-face {{
+  font-family: "MCA Selecta";
+  src: url("{MCA_FONT_URL}") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}}
+"""
+
+mobile_shell_css = Style(NotStr(MCA_FONT_FACE_CSS + """
 html { -webkit-text-size-adjust: 100%; }
 *, *::before, *::after { box-sizing: border-box; }
 body {
@@ -124,6 +137,12 @@ body {
 #landing-page {
   background: var(--color-background-secondary, #f4f4f5);
   color: var(--pico-color, CanvasText);
+  font-family: "MCA Selecta", sans-serif;
+}
+#landing-page input,
+#landing-page select,
+#landing-page button {
+  font-family: inherit;
 }
 #landing-page h1,
 #landing-page label {
@@ -133,6 +152,10 @@ body {
   border: 1px solid var(--pico-muted-border-color, #ccc);
   background: var(--pico-background-color, #fff);
   color: var(--pico-color, inherit);
+}
+#landing-page .landing-start-btn {
+  background: #000;
+  color: #fff;
 }
 @media (prefers-color-scheme: dark) {
   #landing-page {
@@ -146,6 +169,13 @@ body {
   }
   #landing-page .landing-field::placeholder {
     color: #9aa3ad;
+  }
+  #landing-page .landing-logo {
+    filter: invert(1);
+  }
+  #landing-page .landing-start-btn {
+    background: #fff;
+    color: #000;
   }
 }
 """))
@@ -743,6 +773,15 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
         *[Option(label, value=value) for value, label in AGE_OPTIONS],
     ]
     return Div(
+        Img(
+            src=MCA_LOGO_URL,
+            alt="Museum of Contemporary Art Australia",
+            cls="landing-logo",
+            style=(
+                "display: block; margin: 0 auto 1.25rem; "
+                "max-width: min(180px, 27.5vw); height: auto;"
+            ),
+        ),
         H1(
             "Pop-timism",
             style=(
@@ -752,7 +791,11 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
         ),
         Form(
             Div(
-                Label("To begin, tell us your age:", _for="age", style=_label_style()),
+                P(
+                    " The future isn't decided yet, and the best futures aren't predicted - they're imagined.",
+                    style=f"margin: 0 0 {field_gap}; line-height: 1.45;",
+                ),
+                Label("To begin, please tell us your age:", _for="age", style=_label_style()),
                 Select(
                     *age_options,
                     name="age",
@@ -815,10 +858,11 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
             Button(
                 "Start",
                 type="submit",
+                cls="landing-start-btn",
                 style=(
                     "width: 100%; margin-top: 0.25rem; padding: 0.75rem 1rem; font-size: 1rem; "
                     "font-weight: 600; border: none; border-radius: var(--border-radius, 6px); "
-                    "background: #1d9e75; color: white; cursor: pointer; touch-action: manipulation;"
+                    "cursor: pointer; touch-action: manipulation;"
                 ),
             ),
             method="post",
