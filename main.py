@@ -792,7 +792,7 @@ def landing_form(*, age_error: str = "", email_error: str = "") -> Any:
         Form(
             Div(
                 P(
-                    " The future isn't decided yet, and the best futures aren't predicted - they're imagined.",
+                    " The future isn't decided yet, and the best futures aren't predicted – they're imagined.",
                     style=f"margin: 0 0 {field_gap}; line-height: 1.45;",
                 ),
                 Label("To begin, please tell us your age:", _for="age", style=_label_style()),
